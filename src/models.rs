@@ -1,8 +1,7 @@
 use fastcurve_3d::fast_curve_2d;
 use nannou::prelude::*;
-use nannou::rand::{thread_rng, Rng, distributions::Uniform};
-use rand_distr::{Normal, Distribution};
-
+use nannou::rand::{distributions::Uniform, thread_rng, Rng};
+use rand_distr::{Distribution, Normal};
 
 #[derive(Debug, Default, Clone)]
 pub struct Line {
@@ -32,45 +31,89 @@ impl Line {
 
         let mut line = Self { thickness, points };
 
-        line = line.smooth(3).thicken(100);
+        line = line.smooth(3).thicken(5);
 
         line
     }
 
+
     pub fn smooth(self, iterations: u8) -> Self {
         if iterations == 0 {
             return self;
+        };
+
+        let len = self.points.len();
+
+        let mut smooth = vec![];
+
+        for (i, point) in self.points.iter().enumerate() {
+            let new_x1 = 0.75*point.x + 0.25*self.points[(i+1)%len].x;
+            let new_y1 = 0.75*point.y + 0.25*self.points[(i+1)%len].y;
+            let pt1 = Point2::new(new_x1, new_y1);
+            
+            let new_x2 = 0.25*point.x + 0.75*self.points[(i+1)%len].x;
+            let new_y2 = 0.25*point.y + 0.75*self.points[(i+1)%len].y;
+            let pt2 = Point2::new(new_x2, new_y2);
+
+            smooth.push(pt1);
+            smooth.push(pt2);
         }
 
-        let xs: Vec<f64> = self.points.iter().map(|p| p.x as f64).collect();
-        let ys: Vec<f64> = self.points.iter().map(|p| p.y as f64).collect();
+        let points = self.avg_points(smooth);
 
-        let (xn, yn) = fast_curve_2d(&xs, &ys, iterations);
+        let new_line = Self { thickness: self.thickness, points };
 
-        let mut points = vec![];
+        if iterations == 1 {
+            return new_line
+        } else {
+            return new_line.smooth(iterations - 1);
+        }
+    }
 
-        for i in 0..xn.len() {
-            let mut p: Point2;
+    fn smooth_points(&self, points: Vec<Point2>, iterations: u8) -> Vec<Point2> {
+        if iterations == 0 {
+            return points;
+        }
 
-            if i == 0 || i + 1 >= xn.len() {
-                p = Point2::new(xn[i] as f32, yn[i] as f32);
-                points.push(p);
+        let len = points.len();
+        let mut smooth = vec![];
+
+        for (i, point) in points.iter().enumerate() {
+            let p = Point2::new(
+                0.75*point.x + 0.25*points[(i+1)%len].x,
+                0.75*point.y + 0.25*points[(i+1)%len].y,
+            );
+            smooth.push(p);
+            
+            let p = Point2::new(
+                0.25*point.x + 0.75*points[(i+1)%len].x,
+                0.25*point.y + 0.75*points[(i+1)%len].y,
+            );
+            smooth.push(p);
+        }
+
+        if iterations == 1 {
+            return smooth;
+        } else {
+            return self.smooth_points(smooth, iterations - 1)
+        }
+    }
+
+    fn avg_points(&self, points: Vec<Point2>) -> Vec<Point2> {
+        let mut p = vec![];
+        for (i, point) in points.iter().enumerate() {
+            if i == 0 || i + 1 >= points.len() {
+                p.push(*point);
                 continue;
             }
 
-            p = Point2::new(xn[i] as f32, yn[i] as f32);
-            let prev_pt = Point2::new(xn[i - 1] as f32, yn[i - 1] as f32);
-            let next_pt = Point2::new(xn[i + 1] as f32, yn[i + 1] as f32);
-
-            p = (p + prev_pt + next_pt) / 3.0;
-
-            points.push(p);
+            let prev = points[i - 1];
+            let next = points[i + 1];
+            let new = (prev + next + *point) / 3.0;
+            p.push(new)
         }
 
-        Self {
-            thickness: self.thickness,
-            points,
-        }
+        p
     }
 
     pub fn thicken(self, amt: u8) -> Self {
@@ -81,19 +124,19 @@ impl Line {
         self.points.iter().for_each(|point| {
             points.push(*point);
 
-            for _ in 0..amt {
-                let rx = Normal::new(2.0f32, 2.0f32).unwrap();
-                let ry = Normal::new(2.0f32, 2.0f32).unwrap();
+            if amt > 0 {
+                for _ in 0..amt {
+                    let rx = Normal::new(0.0f32, 2.0f32).unwrap();
+                    let ry = Normal::new(0.0f32, 2.0f32).unwrap();
 
-                let mut nx = rx.sample(&mut rng);
-                let mut ny = ry.sample(&mut rng);
-                
+                    let mut nx = rx.sample(&mut rng);
+                    let mut ny = ry.sample(&mut rng);
 
-    
-                nx = nx + point.x;
-                ny = ny + point.y;
-    
-                points.push(Point2::new(nx, ny));
+                    nx = nx + point.x;
+                    ny = ny + point.y;
+
+                    points.push(Point2::new(nx, ny));
+                }
             }
         });
 
@@ -131,7 +174,7 @@ impl Model {
             let start = Point2::new(sx, sy);
             let end = Point2::new(ex, ey);
 
-            let line = Line::new(start, end, 1.0, 10, 1.0);
+            let line = Line::new(start, end, 1.0, 5, 1.0);
 
             lines.push(line);
         }
