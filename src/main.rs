@@ -1,4 +1,4 @@
-use nannou::{prelude::*, color::named};
+use nannou::{color::named, prelude::*};
 
 mod models;
 use models::Model;
@@ -16,7 +16,7 @@ fn model(app: &App) -> Model {
         .view(view)
         .build()
         .unwrap();
-    
+
     Model::new(window)
 }
 
@@ -26,25 +26,34 @@ fn event(app: &App, model: &mut Model, event: Event) {
             if let Some(event) = simple {
                 match event {
                     KeyReleased(Key::S) => events::screenshot(app),
-                    _ => ()
+                    _ => (),
                 }
             }
-        },
+        }
 
         Event::Update(update) => events::update(app, model, update),
-        _ => ()
+        _ => (),
     }
 }
 
-fn view(app: &App, _model: &Model, frame: Frame) {
+fn view(app: &App, model: &Model, frame: Frame) {
     let draw = app.draw();
 
     draw.background().color(named::CORNSILK);
-    draw.ellipse()
-        .x_y(0.0, 0.0)
-        .color(named::GREEN)
-        .radius(20.0);
+
+    for line in &model.lines {
+        // draw.polyline()
+        //     .weight(line.thickness)
+        //     .points(line.points.clone())
+        //     .color(BLACK);
+
+        line.points.iter().for_each(|p| {
+            draw.ellipse()
+                .radius(line.thickness)
+                .xy(*p)
+                .color(BLACK);
+        })
+    }
 
     draw.to_frame(app, &frame).unwrap();
-
 }
