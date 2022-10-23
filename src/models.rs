@@ -1,3 +1,6 @@
+use std::vec;
+
+use fastcurve_3d::fast_curve_2d;
 use nannou::prelude::*;
 use nannou::rand::thread_rng;
 use rand_distr::{Distribution, Normal};
@@ -6,6 +9,7 @@ use rand_distr::{Distribution, Normal};
 pub struct Line {
     pub thickness: f32,
     pub points: Vec<Point2>,
+    pub orig_points: Vec<Point2>,
 }
 
 impl Line {
@@ -28,49 +32,76 @@ impl Line {
 
         points.push(end);
 
-        let mut line = Self { thickness, points };
+        let mut line = Self {
+            thickness,
+            orig_points: points.clone(),
+            points,
+        };
 
-        line = line.smooth(6).thicken(0);
+        line = line.smooth(6).thicken(10);
 
         line
     }
 
     pub fn smooth(self, iterations: u8) -> Self {
         let mut points = self.points.clone();
-        points = self.smooth_points(points, iterations);
+        points = self.chaikin_smooth_points(points, iterations);
+        // points = self.fast_smooth(points, iterations);
         points = self.avg_points(points);
 
         Self {
             thickness: self.thickness,
             points,
+            orig_points: self.points,
         }
     }
 
-    fn smooth_points(&self, points: Vec<Point2>, iterations: u8) -> Vec<Point2> {
+    fn fast_smooth(&self, points: Vec<Point2>, iterations: u8) -> Vec<Point2> {
+        let xs: Vec<f64> = points.iter().map(|p| p.x as f64).collect();
+        let ys: Vec<f64> = points.iter().map(|p| p.y as f64).collect();
+
+        let (xn, yn) = fast_curve_2d(&xs, &ys, iterations);
+
+        let mut points = vec![];
+
+        for i in 0..xn.len() {
+            let point = Point2::new(xn[i] as f32, yn[i] as f32);
+            points.push(point);
+        }
+
+        points
+    }
+
+    fn chaikin_smooth_points(&self, points: Vec<Point2>, iterations: u8) -> Vec<Point2> {
         if iterations == 0 {
             return points;
         }
 
-        let len = points.len();
-        let mut smooth = vec![];
+        let mut p = self.chaikin_step(points);
+        for _ in 0..iterations - 1 {
+            p = self.chaikin_step(p);
+        }
+        p
+    }
 
-        for (i, point) in points.iter().enumerate() {
+    fn chaikin_step(&self, points: Vec<Point2>) -> Vec<Point2> {
+        let mut p = vec![];
+
+        for i in 1..points.len() - 1 {
             let p1 = Point2::new(
-                0.75 * point.x + 0.25 * points[(i + 1) % len].x,
-                0.75 * point.y + 0.25 * points[(i + 1) % len].y,
+                0.25 * points[i - 1].x + 0.75 * points[i].x,
+                0.25 * points[i - 1].y + 0.75 * points[i].y,
             );
-
             let p2 = Point2::new(
-                0.25 * point.x + 0.75 * points[(i + 1) % len].x,
-                0.25 * point.y + 0.75 * points[(i + 1) % len].y,
+                0.75 * points[i - 1].x + 0.25 * points[i].x,
+                0.75 * points[i - 1].y + 0.25 * points[i].y,
             );
 
-            let mut pta = vec![p1, p2];
-
-            smooth.append(&mut pta);
+            p.push(p1);
+            p.push(p2);
         }
 
-        return self.smooth_points(smooth, iterations - 1);
+        p
     }
 
     fn avg_points(&self, points: Vec<Point2>) -> Vec<Point2> {
@@ -90,34 +121,27 @@ impl Line {
         p
     }
 
-    pub fn thicken(mut self, amt: u8) -> Self {
-        if amt == 0 {
-            return self;
+    pub fn thicken(self, _amt: u8) -> Self {
+        let mut p = vec![];
+        let mut rng = thread_rng();
+        let normal = Normal::new(0.0f32, 0.5f32).unwrap();
+
+        for point in self.points.iter() {
+            let x = normal.sample(&mut rng);
+            let y = normal.sample(&mut rng);
+
+            let mut new_point = Point2::new(x, y);
+            new_point = *point + new_point;
+
+            p.push(new_point);
         }
 
-        let mut points = vec![];
-
-        let mut rng = thread_rng();
-
-        self.points.iter().for_each(|point| {
-            for _ in 0..amt {
-                let norm = Normal::new(0.0f32, 2.0f32).unwrap();
-    
-                let nx = norm.sample(&mut rng);
-                let ny = norm.sample(&mut rng);
-    
-                let mut new = Point2::new(nx, ny);
-                new = new + *point;
-                points.push(new);
-            }
-
-        });
-
-        points.append(&mut self.points);
+        p = self.chaikin_smooth_points(p, 3);
 
         Self {
             thickness: self.thickness,
-            points,
+            points: p,
+            orig_points: self.orig_points,
         }
     }
 }
@@ -134,13 +158,13 @@ impl Model {
         let mut lines = vec![];
 
         for i in 0..MAX_LINES {
-            let mut sx = -100.0;
+            let mut sx = -500.0;
             let mut sy = ((i as f32) - (MAX_LINES as f32) / 2.0) * 50.0;
 
             sx += random_range(-5.0, 5.0);
             sy += random_range(-5.0, 5.0);
 
-            let mut ex = 100.0;
+            let mut ex = 500.0;
             let mut ey = ((i as f32) - (MAX_LINES as f32) / 2.0) * 50.0;
 
             ex += random_range(-5.0, 5.0);
@@ -149,7 +173,7 @@ impl Model {
             let start = Point2::new(sx, sy);
             let end = Point2::new(ex, ey);
 
-            let line = Line::new(start, end, 1.0, 5);
+            let line = Line::new(start, end, 1.0, 10);
 
             lines.push(line);
         }
